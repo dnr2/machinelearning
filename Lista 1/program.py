@@ -27,7 +27,7 @@ def solve_problem1():
   #set parameters
   normalize_attributes = True
   k_values = [1,2,3,5,7,9,11,13,15]
-  train_data_ratio = 0.7;
+  data_ratio = 0.7;
   
   #read data
   datafiles = ["iris.data.txt", "transfusion.data.txt"]  
@@ -43,10 +43,15 @@ def solve_problem1():
     datasets = [ [normalize(dataset[0].astype(float)),dataset[1]] for dataset in datasets ];        
   
   #create training and test data
-  for dataset in datasets :
-    split_list = [np.split(attribute,[train_data_ratio * attribute.shape[0]]) for attribute in attributes]
-    split_attributes = np.array( split_list )
-    (train_datasets, test_datasets) = (split_attributes[:,0], split_attributes[:,1] )
+  for dataset in datasets :    
+    sets = []
+    for set in range(0,2):
+      train_size = train_data_ratio * dataset[0].shape[0]
+      sets.append( np.split(dataset[set],[train_size] ) )
+    train_data.append( sets )
+    # split_list = [np.split(attribute,[]) for attribute in attributes]
+    # split_attributes = np.array( split_list )
+    # (train_datasets, test_datasets) = (split_attributes[:,0], split_attributes[:,1] )
 
   
   
