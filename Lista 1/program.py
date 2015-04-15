@@ -10,6 +10,11 @@ UCI Datasets:
 - PROBLEM 2 - 
 #UCI https://archive.ics.uci.edu/ml/datasets/Tic-Tac-Toe+Endgame
 #UCI https://archive.ics.uci.edu/ml/datasets/Congressional+Voting+Records
+- PROBLEM 3 - 
+#UCI https://archive.ics.uci.edu/ml/datasets/Credit+Approval
+  => changed column separator AND
+  => changed unknown values '?' by -1 to help with numeric columns
+#UCI https://archive.ics.uci.edu/ml/datasets/Acute+Inflammations      
 '''
 
 import numpy as np
@@ -49,8 +54,8 @@ def normalize(dataset):
 #after that, each type is split into training and and testing
 def read_datasets(datafiles,normalize_attributes,class_last_column):
   #read data  
-  datasets = [np.array(pd.read_csv(file,sep=',', header=None)) for file in datafiles]
-  map(np.random.shuffle, datasets)
+  datasets = [np.array(pd.read_csv(file,sep=',',header=None,converters={})) for file in datafiles]
+  map(np.random.shuffle, datasets)  
   
   #split datasets in two types: classes and attributes, index [0,1]  
   datasets = [ np.split(dataset, [dataset.shape[1]-1] if class_last_column[idx] else [1],axis=1 ) 
@@ -58,8 +63,7 @@ def read_datasets(datafiles,normalize_attributes,class_last_column):
   
   #swap attributes and classes for class_last_column
   for idx in range(len(datasets)):
-    if not class_last_column[idx]:
-      print idx
+    if not class_last_column[idx]:      
       datasets[idx][attributes], datasets[idx][classes] = datasets[idx][classes], datasets[idx][attributes]
   
   #data transformations
@@ -75,25 +79,25 @@ def read_datasets(datafiles,normalize_attributes,class_last_column):
 def compute_VDM(dataset):
   global VDM_N
   global VDM_C
-  VDM_N = defaultdict(lambda: 0.0,{})
+  VDM_N = defaultdict(lambda: EPS,{})
   VDM_C = defaultdict(lambda: 0,{}) 
   
   #precompute the values for N and C in VDM distance
   for row in range(dataset[classes][training].shape[0]):
-    cur_class = dataset[classes][training][row,0]
-    # VDM_C.setdefault(cur_class,0)
+    cur_class = dataset[classes][training][row,0]    
     VDM_C[cur_class] += 1
   for column in range(dataset[attributes][training].shape[1]):
+    first_val = dataset[attributes][training][0,column]
+    if isinstance(first_val, (int, long, float)):  
+      continue
     val_count = defaultdict(lambda: 0.0,{})
     for row in range(dataset[classes][training].shape[0]):  
       cur_val = dataset[attributes][training][row,column]
-      cur_class = dataset[classes][training][row,0]
-      # val_count.setdefault(cur_val,0)
-      val_count[(cur_val)] += 1.0
-      # val_count.setdefault((cur_val,cur_class),0)      
-      val_count[(cur_val,cur_class)] += 1.0
+      cur_class = dataset[classes][training][row,0]      
+      val_count[(cur_val,)] += 1.0      
+      val_count[(cur_val,cur_class)] += 1.0      
     for key in val_count:  
-      cur_val = key[0]
+      cur_val = key[0]      
       if len(key) == 1:
         VDM_N[(column,cur_val)] += val_count[key]
       else:
@@ -103,17 +107,13 @@ def compute_VDM(dataset):
 # ============ DISTANCES ==================== #
   
 def euclidian_dist(vec1, vec2):  
-  sum = 0
-  if len(vec1) != len(vec2):
-    return float('nan')
+  sum = 0  
   for i in range(len(vec1)):
     sum = sum + math.pow(vec1[i] - vec2[i] , 2)
   return math.sqrt(sum)
 
 def vdm_distance(vec1,vec2):
-  sum = 0
-  if len(vec1) != len(vec2):
-    return float('nan')
+  sum = 0  
   for i in range(len(vec1)):
     a = vec1[i]
     b = vec2[i]
@@ -123,6 +123,35 @@ def vdm_distance(vec1,vec2):
       sum += add
   return math.sqrt(sum)
 
+#uses -1 or "-1" to represent unknown values
+def hvdm_distance(vec1,vec2):
+  sum = 0  
+  for i in range(len(vec1)):
+    a = vec1[i]
+    b = vec2[i]    
+    if str(a) == '-1' and str(b) == '-1':
+      #both unknown
+      add = 0 
+    elif str(a) == '-1' or str(b) == '-1':
+      #only one is unknown
+      add = 1
+    elif isinstance(a, (int, long, float)) and isinstance(b, (int, long, float)):
+      #case numeric attribute, adds EPS to avoid division by zero
+      add = abs(a-b) / ((max(a,b) - min(a,b))+EPS)
+    else :
+      #case categoric attribute
+      for c in VDM_C:        
+        
+        #TODO when VDM_N is EPS
+        # if VDM_N[(i,a)] == EPS or VDM_N[(i,b)] == EPS:
+          # print i,a,b
+          # print VDM_N[(i,a)], VDM_N[(i,b)]
+          
+        add = abs((VDM_N[(i,a,c)]/VDM_N[(i,a)]) - (VDM_N[(i,b,c)]/VDM_N[(i,b)]))
+        add = math.pow(add, VDM_Q)   
+    sum += math.pow(add,2)
+  return math.sqrt(sum)
+  
 # ============ ALGORITHMS =================== #
 
 def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):  
@@ -168,11 +197,10 @@ def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):
 
 def solve_knn(datasets,dist_func,compute_VDM_globals):
   #run training with different configurations
-  for dataset in datasets:
+  for dataset in datasets:    
+    print dataset
     if compute_VDM_globals:
-      compute_VDM(dataset)
-      print VDM_C
-      print VDM_N
+      compute_VDM(dataset)      
     for k_nn_weighted in [False,True]:      
       print "k_nn_weighted ", k_nn_weighted
       for k_value in k_values:
@@ -190,7 +218,7 @@ def solve_knn(datasets,dist_func,compute_VDM_globals):
 #using dataset iris and transfusion from UCI, headers were removed
 def solve_problem1():
   #set parameters      
-  datafiles = ["iris.data.txt", "transfusion.data.txt"]      
+  datafiles = ["iris.data.txt", "transfusion.data.txt"]
   normalize_attributes = True
   class_last_column = [True,True]
   compute_VDM_globals = False
@@ -210,10 +238,23 @@ def solve_problem2():
   #read data and run k_nn algorithm
   datasets = read_datasets(datafiles,normalize_attributes,class_last_column)    
   solve_knn(datasets,vdm_distance,compute_VDM_globals)
+
+#using datasets Acute Inflammations and Credit Approval from UCI
+def solve_problem3():
+  #set parameters    
+  datafiles = ["crx.data.txt","diagnosis.data.txt"]    
+  normalize_attributes = False #TODO should normalize???
+  class_last_column = [True,True]
+  compute_VDM_globals = True
+  
+  #read data and run k_nn algorithm
+  datasets = read_datasets(datafiles,normalize_attributes,class_last_column)    
+  solve_knn(datasets,hvdm_distance,compute_VDM_globals)
   
 def main():
-  # solve_problem1()  
-  solve_problem2()
+  solve_problem1()  
+  # solve_problem2()
+  # solve_problem3()
   
 if __name__ == "__main__":
   main()
