@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 import math
 
+from collections import defaultdict
+
 # ============ GLOBAL SETTINGS ============== #
 
 #constants
@@ -30,6 +32,11 @@ np.set_printoptions(threshold=15)
 np.set_printoptions(precision=4)
 np.random.seed(12314927)
 
+#vdm distance, constants and global variables
+VDM_Q = 2
+VDM_C = {}
+VDM_N = {}
+
 # ============ UTILS ======================== #
 
 def normalize(dataset):
@@ -38,27 +45,61 @@ def normalize(dataset):
   return new_matrix
 
 #read datasets from different file sources (headers must be removed)
-#each dataset is split into attributes and classes (class column is assumed to be the last one)
-#after that, each type of the dataset is split into training and and testing
+#each dataset is split into attributes and classes
+#after that, each type is split into training and and testing
 def read_datasets(datafiles,normalize_attributes,class_last_column):
   #read data  
   datasets = [np.array(pd.read_csv(file,sep=',', header=None)) for file in datafiles]
   map(np.random.shuffle, datasets)
   
   #split datasets in two types: classes and attributes, index [0,1]  
-  datasets = [ np.split(dataset, [dataset.shape[1]-1] if class_last_column[idx] else 1,axis=1 ) 
+  datasets = [ np.split(dataset, [dataset.shape[1]-1] if class_last_column[idx] else [1],axis=1 ) 
     for (idx,dataset) in list(enumerate(datasets)) ]    
+  
+  #swap attributes and classes for class_last_column
+  for idx in range(len(datasets)):
+    if not class_last_column[idx]:
+      print idx
+      datasets[idx][attributes], datasets[idx][classes] = datasets[idx][classes], datasets[idx][attributes]
   
   #data transformations
   if normalize_attributes :
     datasets = [ [normalize(dataset[attributes].astype(float)),dataset[classes]] 
-      for dataset in datasets ];          
+      for dataset in datasets ];
   
   #splits data set in training and testing data, index [0,1]
   datasets = [ [ np.split(dataset[type], [int(train_data_ratio * dataset[type].shape[0])]) 
     for type in [attributes,classes]]  for dataset in datasets]  
   return datasets
 
+def compute_VDM(dataset):
+  global VDM_N
+  global VDM_C
+  VDM_N = defaultdict(lambda: 0.0,{})
+  VDM_C = defaultdict(lambda: 0,{}) 
+  
+  #precompute the values for N and C in VDM distance
+  for row in range(dataset[classes][training].shape[0]):
+    cur_class = dataset[classes][training][row,0]
+    # VDM_C.setdefault(cur_class,0)
+    VDM_C[cur_class] += 1
+  for column in range(dataset[attributes][training].shape[1]):
+    val_count = defaultdict(lambda: 0.0,{})
+    for row in range(dataset[classes][training].shape[0]):  
+      cur_val = dataset[attributes][training][row,column]
+      cur_class = dataset[classes][training][row,0]
+      # val_count.setdefault(cur_val,0)
+      val_count[(cur_val)] += 1.0
+      # val_count.setdefault((cur_val,cur_class),0)      
+      val_count[(cur_val,cur_class)] += 1.0
+    for key in val_count:  
+      cur_val = key[0]
+      if len(key) == 1:
+        VDM_N[(column,cur_val)] += val_count[key]
+      else:
+        cur_class = key[1]
+        VDM_N[(column,cur_val,cur_class)] += val_count[key]
+                
 # ============ DISTANCES ==================== #
   
 def euclidian_dist(vec1, vec2):  
@@ -69,14 +110,18 @@ def euclidian_dist(vec1, vec2):
     sum = sum + math.pow(vec1[i] - vec2[i] , 2)
   return math.sqrt(sum)
 
-#TODO!!! how to integrate?
-def vdm_distance(vec1,vec2,dataset):
+def vdm_distance(vec1,vec2):
   sum = 0
   if len(vec1) != len(vec2):
     return float('nan')
   for i in range(len(vec1)):
-    print i
-  return 0
+    a = vec1[i]
+    b = vec2[i]
+    for c in VDM_C:
+      add = abs((VDM_N[(i,a,c)]/VDM_N[(i,a)]) - (VDM_N[(i,b,c)]/VDM_N[(i,b)]))
+      add = math.pow(add, VDM_Q)
+      sum += add
+  return math.sqrt(sum)
 
 # ============ ALGORITHMS =================== #
 
@@ -99,9 +144,9 @@ def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):
     k_nearest = sorted( k_nearest, key= lambda x : x[0], reverse=True )
     
   #counting for each class (with or without weight)
-  counting = {}
+  counting = defaultdict(lambda: 0,{})
   for instance in k_nearest:      
-    counting.setdefault(instance[1], 0)
+    # counting.setdefault(instance[1], 0)
     if not weighted:
       counting[instance[1]] += 1
     else:      
@@ -119,17 +164,20 @@ def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):
   
   return predicted_class
   
-
 # ============ SOLUTION FOR PROBLEMS ======== #
 
-def solve_knn(datasets,dist_func):
+def solve_knn(datasets,dist_func,compute_VDM_globals):
   #run training with different configurations
-  for dataset in datasets:     
+  for dataset in datasets:
+    if compute_VDM_globals:
+      compute_VDM(dataset)
+      print VDM_C
+      print VDM_N
     for k_nn_weighted in [False,True]:      
       print "k_nn_weighted ", k_nn_weighted
       for k_value in k_values:
         print "k_value ", k_value
-        accuracy_sum = 0        
+        accuracy_sum = 0     
         for query_idx in range(dataset[attributes][testing].shape[0]):
           query = dataset[attributes][testing][query_idx,:]        
           real_class = dataset[classes][testing][query_idx,0]
@@ -145,10 +193,11 @@ def solve_problem1():
   datafiles = ["iris.data.txt", "transfusion.data.txt"]      
   normalize_attributes = True
   class_last_column = [True,True]
+  compute_VDM_globals = False
   
   #read data and run k_nn algorithm
   datasets = read_datasets(datafiles,normalize_attributes,class_last_column)    
-  solve_knn(datasets,euclidian_dist)
+  solve_knn(datasets,euclidian_dist,compute_VDM_globals)
 
 #using datasets Tic-Tac-Toe Endgame and Congressional Voting from UCI
 def solve_problem2():
@@ -156,13 +205,15 @@ def solve_problem2():
   datafiles = ["tic-tac-toe.data.txt", "house-votes-84.data.txt"]    
   normalize_attributes = False
   class_last_column = [True,False]
+  compute_VDM_globals = True
   
   #read data and run k_nn algorithm
   datasets = read_datasets(datafiles,normalize_attributes,class_last_column)    
-  solve_knn(datasets,vdm_distance)
+  solve_knn(datasets,vdm_distance,compute_VDM_globals)
   
 def main():
-  solve_problem1()  
+  # solve_problem1()  
+  solve_problem2()
   
 if __name__ == "__main__":
   main()
