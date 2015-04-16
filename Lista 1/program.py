@@ -20,6 +20,7 @@ UCI Datasets:
 import numpy as np
 import pandas as pd
 import math
+import copy
 
 from collections import defaultdict
 
@@ -45,8 +46,21 @@ VDM_N = {}
 # ============ UTILS ======================== #
 
 def normalize(dataset):
-  row_sums = dataset.sum(axis=1)
-  new_matrix = dataset / row_sums[:, np.newaxis]
+  new_matrix = dataset  
+  for column in range(new_matrix.shape[1]):
+    first_val = new_matrix[0][column]
+    print column, first_val, type(first_val)
+    if isinstance(first_val, (int, long, float,np.int64,np.float32)): 
+      c_min = min(new_matrix[:,column].astype(float))
+      c_max = max(new_matrix[:,column].astype(float))
+      # print new_matrix[:,column].astype(float)
+      print c_min, c_max
+      for row in range(new_matrix.shape[0]):
+        nval = float(new_matrix[row][column] - c_min) / float(c_max-c_min)
+        if nval == 1.0:
+          print "IS ONE ", row, column, nval, new_matrix[row][column]
+        new_matrix[row][column] = nval
+        
   return new_matrix
 
 #read datasets from different file sources (headers must be removed)
@@ -64,12 +78,14 @@ def read_datasets(datafiles,normalize_attributes,class_last_column):
   #swap attributes and classes for class_last_column
   for idx in range(len(datasets)):
     if not class_last_column[idx]:      
-      datasets[idx][attributes], datasets[idx][classes] = datasets[idx][classes], datasets[idx][attributes]
+      datasets[idx][attributes], datasets[idx][classes] = datasets[idx][classes], datasets[idx][attributes]  
   
   #data transformations
-  if normalize_attributes :
-    datasets = [ [normalize(dataset[attributes].astype(float)),dataset[classes]] 
-      for dataset in datasets ];
+  # if normalize_attributes :
+    # datasets = [ [normalize(dataset[attributes].astype(float)),dataset[classes]]  
+      # for dataset in datasets ];
+  
+  print datasets
   
   #splits data set in training and testing data, index [0,1]
   datasets = [ [ np.split(dataset[type], [int(train_data_ratio * dataset[type].shape[0])]) 
@@ -198,7 +214,7 @@ def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):
 def solve_knn(datasets,dist_func,compute_VDM_globals):
   #run training with different configurations
   for dataset in datasets:    
-    print dataset
+    # print dataset
     if compute_VDM_globals:
       compute_VDM(dataset)      
     for k_nn_weighted in [False,True]:      
@@ -219,7 +235,7 @@ def solve_knn(datasets,dist_func,compute_VDM_globals):
 def solve_problem1():
   #set parameters      
   datafiles = ["iris.data.txt", "transfusion.data.txt"]
-  normalize_attributes = True
+  # normalize_attributes = True
   class_last_column = [True,True]
   compute_VDM_globals = False
   
@@ -231,7 +247,7 @@ def solve_problem1():
 def solve_problem2():
   #set parameters  
   datafiles = ["tic-tac-toe.data.txt", "house-votes-84.data.txt"]    
-  normalize_attributes = False
+  # normalize_attributes = False
   class_last_column = [True,False]
   compute_VDM_globals = True
   
@@ -243,9 +259,9 @@ def solve_problem2():
 def solve_problem3():
   #set parameters    
   datafiles = ["crx.data.txt","diagnosis.data.txt"]    
-  normalize_attributes = False #TODO should normalize???
+  # normalize_attributes = True #TODO should normalize???
   class_last_column = [True,True]
-  compute_VDM_globals = True
+  compute_VDM_globals = False
   
   #read data and run k_nn algorithm
   datasets = read_datasets(datafiles,normalize_attributes,class_last_column)    
@@ -253,8 +269,8 @@ def solve_problem3():
   
 def main():
   solve_problem1()  
-  # solve_problem2()
-  # solve_problem3()
+  solve_problem2()
+  solve_problem3()
   
 if __name__ == "__main__":
   main()
