@@ -1,20 +1,12 @@
 '''
 Cin UFPE - Aprendizagem de Maquina 2015.1
-Lista de Exercicios #1
+Lista de Exercicios #2
 By: Danilo Neves Ribeiro dnr2@cin.ufpe.br
 
 UCI Datasets:
 - PROBLEM 1 - 
 #UCI https://archive.ics.uci.edu/ml/datasets/Iris
 #UCI https://archive.ics.uci.edu/ml/datasets/Blood+Transfusion+Service+Center
-- PROBLEM 2 - 
-#UCI https://archive.ics.uci.edu/ml/datasets/Tic-Tac-Toe+Endgame
-#UCI https://archive.ics.uci.edu/ml/datasets/Congressional+Voting+Records
-- PROBLEM 3 - 
-#UCI https://archive.ics.uci.edu/ml/datasets/Credit+Approval
-  => changed column separator AND
-  => changed unknown values '?' by -1 to help with numeric columns
-#UCI https://archive.ics.uci.edu/ml/datasets/Acute+Inflammations      
 '''
 
 import numpy as np
@@ -30,7 +22,7 @@ from collections import defaultdict
 attributes, classes = (0,1)
 training, testing = (0,1)
 EPS = 1e-9
-k_values = [1,2,3,5,7,9,11,13,15]
+k_values = [1,3]
 train_data_ratio = 0.7;
 number_types = (int, long, float,np.int64,np.float32)
 
@@ -43,10 +35,8 @@ np.set_printoptions(precision=4)
 min_val_col = []
 max_val_col = []
 
-#vdm distance, constants and global variables
-VDM_Q = 2
-VDM_C = {}
-VDM_N = {}
+#LVQ constants
+LVQ_num_iterations = 100
 
 # ============ UTILS ======================== #
 
@@ -90,34 +80,6 @@ def read_datasets(datafiles,class_last_column):
   datasets = [ [ np.split(dataset[type], [int(train_data_ratio * dataset[type].shape[0])]) 
     for type in [attributes,classes]]  for dataset in datasets]  
   return datasets
-
-def compute_VDM(dataset):
-  global VDM_N
-  global VDM_C
-  VDM_N = defaultdict(lambda: EPS,{})
-  VDM_C = defaultdict(lambda: 0,{}) 
-  
-  #precompute the values for N and C in VDM distance
-  for row in range(dataset[classes][training].shape[0]):
-    cur_class = dataset[classes][training][row,0]    
-    VDM_C[cur_class] += 1
-  for column in range(dataset[attributes][training].shape[1]):
-    first_val = dataset[attributes][training][0,column]
-    if isinstance(first_val, number_types):  
-      continue
-    val_count = defaultdict(lambda: 0.0,{})
-    for row in range(dataset[classes][training].shape[0]):  
-      cur_val = dataset[attributes][training][row,column]
-      cur_class = dataset[classes][training][row,0]      
-      val_count[(cur_val,)] += 1.0      
-      val_count[(cur_val,cur_class)] += 1.0      
-    for key in val_count:  
-      cur_val = key[0]      
-      if len(key) == 1:
-        VDM_N[(column,cur_val)] += val_count[key]
-      else:
-        cur_class = key[1]
-        VDM_N[(column,cur_val,cur_class)] += val_count[key]
                 
 # ============ DISTANCES ==================== #
   
@@ -128,48 +90,47 @@ def euclidian_dist(vec1, vec2):
     sum = sum + math.pow(float(vec1[i] - vec2[i])/float(range_col), 2)
   return math.sqrt(sum)
 
-def vdm_distance(vec1,vec2):
-  sum = 0  
-  for i in range(len(vec1)):
-    a = vec1[i]
-    b = vec2[i]
-    for c in VDM_C:
-      add = abs((VDM_N[(i,a,c)]/VDM_N[(i,a)]) - (VDM_N[(i,b,c)]/VDM_N[(i,b)]))
-      add = math.pow(add, VDM_Q)
-      sum += add
-  return math.sqrt(sum)
-
-#uses -1 or "-1" to represent unknown values
-def hvdm_distance(vec1,vec2):
-  sum = 0  
-  for i in range(len(vec1)):
-    a = vec1[i]
-    b = vec2[i]    
-    if str(a) == '-1' and str(b) == '-1':
-      #both unknown
-      add = 0 
-    elif str(a) == '-1' or str(b) == '-1':
-      #only one is unknown
-      add = 1
-    elif isinstance(a, number_types) and isinstance(b, number_types):
-      #case numeric attribute, adds EPS to avoid division by zero
-      add = abs(a-b) / ((max(a,b) - min(a,b))+EPS)
-    else :
-      #case categoric attribute
-      for c in VDM_C:        
-        
-        #TODO when VDM_N is EPS
-        # if VDM_N[(i,a)] == EPS or VDM_N[(i,b)] == EPS:
-          # print i,a,b
-          # print VDM_N[(i,a)], VDM_N[(i,b)]
-          
-        add = abs((VDM_N[(i,a,c)]/VDM_N[(i,a)]) - (VDM_N[(i,b,c)]/VDM_N[(i,b)]))
-        add = math.pow(add, VDM_Q)   
-    sum += math.pow(add,2)
-  return math.sqrt(sum)
-  
 # ============ ALGORITHMS =================== #
 
+def LVQ1(dataset,ratio_num_prototypes,learing_rate):
+
+  num_prototypes = dataset[attributes][training].shape[0] * ratio_num_prototypes
+
+  indexes = range(dataset[attributes][training].shape[0]);
+  np.random.shuffle(indexes);
+  indexes = indexes[:num_prototypes]
+  prototypes = [dataset[type][training][indexes,:] for type in [attributes,classes]]
+  
+  for iteration in range(LVQ_num_iterations):
+    for row in range(dataset[attributes][training].shape[0]):
+      sample_attribute = dataset[attributes][training][row]
+      sample_class = dataset[classes][training][row]
+      closest_prototype = None;
+      closest_prototype_dist = 0
+      for proto_row in range(prototypes[attributes].shape[0]):   
+        proto_att = prototypes[attributes][proto_row]
+        proto_class = prototypes[classes][proto_row]
+        cur_dist = euclidian_dist(proto_att,sample_attribute)
+        if closest_prototype is None or closest_prototype_dist < cur_dist:
+          closest_prototype_dist = cur_dist
+          closest_prototype = [proto_att,proto_class,proto_row]
+            
+      proto_att = closest_prototype[0]
+      proto_class = closest_prototype[1]
+      proto_row = closest_prototype[2]
+      
+      dir_vec = (sample_attribute - proto_att) * learing_rate
+      
+      if sample_class == proto_class:
+        prototypes[attributes][proto_row] += dir_vec
+      else:
+        prototypes[attributes][proto_row] -= dir_vec
+  
+  dataset[attributes][training] = prototypes[attributes]
+  dataset[classes][training] = prototypes[classes]
+  
+  return dataset
+  
 def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):  
   #set first instance to be the base case
   ini_dist = dist_func(dataset[attributes][training][0,:] ,query)
@@ -185,7 +146,7 @@ def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):
       if cur_dist < k_nearest[0][0]:       
         k_nearest[0] = ( cur_dist, cur_class )
     else :
-      k_nearest.append((cur_dist, cur_class)) 
+      k_nearest.append((cur_dist, cur_class))
     k_nearest = sorted( k_nearest, key= lambda x : x[0], reverse=True )
     
   #counting for each class (with or without weight)
@@ -211,19 +172,23 @@ def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):
   
 # ============ SOLUTION FOR PROBLEMS ======== #
 
-def solve_knn(datasets,dist_func,compute_VDM_globals):
+def solve_knn(datasets,dist_func):
   #run training with different configurations
-  for dataset in datasets:    
-    compute_range_col(dataset[attributes][training])
-    # print min_val_col, max_val_col
-    if compute_VDM_globals:
-      compute_VDM(dataset) 
+  for dataset in datasets:
+    
+    ratio_num_prototypes = 0.2    
+    learing_rate = 0.3
+    
+    dataset = LVQ1(dataset,ratio_num_prototypes,learing_rate);
+    
+    compute_range_col(dataset[attributes][training])    
     start_time = time.time()
-    for k_nn_weighted in [False,True]:      
-      print "k_nn_weighted ", k_nn_weighted
+    #for k_nn_weighted in [False,True]:   
+    for k_nn_weighted in [False]:      
+      print "k_nn_weighted", k_nn_weighted
       for k_value in k_values:
         # print "k_value ", k_value
-        accuracy_sum = 0     
+        accuracy_sum = 0
         for query_idx in range(dataset[attributes][testing].shape[0]):
           query = dataset[attributes][testing][query_idx,:]        
           real_class = dataset[classes][testing][query_idx,0]
@@ -239,40 +204,18 @@ def solve_knn(datasets,dist_func,compute_VDM_globals):
 #using dataset iris and transfusion from UCI, headers were removed
 def solve_problem1():
   #set parameters      
-  datafiles = ["iris.data.txt", "transfusion.data.txt"]  
-  class_last_column = [True,True]
-  compute_VDM_globals = False
+  datafiles = ["iris.data.txt", "transfusion.data.txt"] 
+  class_last_column = [True,True]  
   
   #read data and run k_nn algorithm
-  datasets = read_datasets(datafiles,class_last_column)    
-  solve_knn(datasets,euclidian_dist,compute_VDM_globals)
+  datasets = read_datasets(datafiles,class_last_column)
+  
+  
+  
+  solve_knn(datasets,euclidian_dist)
 
-#using datasets Tic-Tac-Toe Endgame and Congressional Voting from UCI
-def solve_problem2():
-  #set parameters  
-  datafiles = ["tic-tac-toe.data.txt", "house-votes-84.data.txt"]      
-  class_last_column = [True,False]
-  compute_VDM_globals = True
-  
-  #read data and run k_nn algorithm
-  datasets = read_datasets(datafiles,class_last_column)    
-  solve_knn(datasets,vdm_distance,compute_VDM_globals)
-
-#using datasets Acute Inflammations and Credit Approval from UCI
-def solve_problem3():
-  #set parameters    
-  datafiles = ["crx.data.txt","diagnosis.data.txt"]   
-  class_last_column = [True,True]
-  compute_VDM_globals = False
-  
-  #read data and run k_nn algorithm
-  datasets = read_datasets(datafiles,class_last_column)    
-  solve_knn(datasets,hvdm_distance,compute_VDM_globals)
-  
 def main():
-  solve_problem1()  
-  solve_problem2()
-  solve_problem3()
+  solve_problem1()    
   
 if __name__ == "__main__":
   main()
