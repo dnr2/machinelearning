@@ -29,17 +29,22 @@ number_types = (int, long, float,np.int64,np.float32)
 #numpy settings
 np.set_printoptions(threshold=15)
 np.set_printoptions(precision=4)
-# np.random.seed(12314927)
+np.random.seed(12314927)
 
 #normalized euclidian distance global variables
 min_val_col = []
 max_val_col = []
 
 #LVQ constants
-LVQ_num_iterations = 100
+LVQ_NUM_ITERATIONS = 50
 
 # ============ UTILS ======================== #
 
+#linear decreasing learning rate function
+def decreasing_learning_rate(learing_rate,t,total_t):  
+  return learing_rate * ((1.0 + EPS) - (float(t)/float(total_t)))
+ 
+#computer rage for euclidian disntance normalization
 def compute_range_col(dataset):
   new_matrix = dataset  
   global min_val_col
@@ -80,46 +85,57 @@ def read_datasets(datafiles,class_last_column):
   datasets = [ [ np.split(dataset[type], [int(train_data_ratio * dataset[type].shape[0])]) 
     for type in [attributes,classes]]  for dataset in datasets]  
   return datasets
-                
+
 # ============ DISTANCES ==================== #
-  
-def euclidian_dist(vec1, vec2):  
+def euclidian_dist_norm(vec1, vec2):  
   sum = 0  
-  for i in range(len(vec1)):
-    range_col = max_val_col[i] - min_val_col[i]    
+  for i in range(len(vec1)):   
+    range_col = max_val_col[i] - min_val_col[i]
     sum = sum + math.pow(float(vec1[i] - vec2[i])/float(range_col), 2)
   return math.sqrt(sum)
 
 # ============ ALGORITHMS =================== #
+def LVQ_generate_prototypes(dataset,ratio_num_prototypes,learing_rate):
+  num_prototypes = int(dataset[attributes][training].shape[0] * ratio_num_prototypes)
+  indexes = range(dataset[attributes][training].shape[0])
+  np.random.shuffle(indexes)
+  indexes = indexes[0:num_prototypes]
+  prototypes = [dataset[type][training][indexes,:] for type in [attributes,classes]]
+  return prototypes
 
+def get_k_closest_prototypes(k_value,sample_attribute,prototypes):
+  closest_prototypes = [];  
+  for proto_row in range(prototypes[attributes].shape[0]):     
+    proto_att = prototypes[attributes][proto_row]    
+    cur_dist = euclidian_dist_norm(proto_att,sample_attribute)
+    if len(closest_prototypes) < k_value:
+      closest_prototypes.append( (proto_row,cur_dist))
+    else:
+      sorted( closest_prototypes, key= lambda x : x[1], reverse=True )
+      if closest_prototypes[0][1] > cur_dist :
+        closest_prototypes[0] = (proto_row,cur_dist)
+  ret = map(lambda x : x[0], closest_prototypes)
+  print ret, print closest_prototypes
+  return ret
+  
+  
 def LVQ1(dataset,ratio_num_prototypes,learing_rate):
 
-  num_prototypes = dataset[attributes][training].shape[0] * ratio_num_prototypes
-
-  indexes = range(dataset[attributes][training].shape[0]);
-  np.random.shuffle(indexes);
-  indexes = indexes[:num_prototypes]
-  prototypes = [dataset[type][training][indexes,:] for type in [attributes,classes]]
+  prototypes = LVQ_generate_prototypes(dataset,ratio_num_prototypes,learing_rate)  
   
-  for iteration in range(LVQ_num_iterations):
+  for iteration in range(LVQ_NUM_ITERATIONS):
     for row in range(dataset[attributes][training].shape[0]):
       sample_attribute = dataset[attributes][training][row]
       sample_class = dataset[classes][training][row]
-      closest_prototype = None;
-      closest_prototype_dist = 0
-      for proto_row in range(prototypes[attributes].shape[0]):   
-        proto_att = prototypes[attributes][proto_row]
-        proto_class = prototypes[classes][proto_row]
-        cur_dist = euclidian_dist(proto_att,sample_attribute)
-        if closest_prototype is None or closest_prototype_dist < cur_dist:
-          closest_prototype_dist = cur_dist
-          closest_prototype = [proto_att,proto_class,proto_row]
-            
-      proto_att = closest_prototype[0]
-      proto_class = closest_prototype[1]
-      proto_row = closest_prototype[2]
       
-      dir_vec = (sample_attribute - proto_att) * learing_rate
+      closest_prototypes = get_k_closest_prototypes(1,sample_attribute,prototypes)
+            
+      proto_row = closest_prototypes[0]
+      proto_att = prototypes[attributes][proto_row]
+      proto_class = prototypes[attributes][proto_row]
+      
+      cur_iteration_rate = decreasing_learning_rate(learing_rate,iteration,LVQ_NUM_ITERATIONS)
+      dir_vec = (sample_attribute - proto_att) * cur_iteration_rate
       
       if sample_class == proto_class:
         prototypes[attributes][proto_row] += dir_vec
@@ -176,18 +192,22 @@ def solve_knn(datasets,dist_func):
   #run training with different configurations
   for dataset in datasets:
     
-    ratio_num_prototypes = 0.2    
-    learing_rate = 0.3
+    ratio_num_prototypes = 0.1  
+    learing_rate = 0.05
     
-    dataset = LVQ1(dataset,ratio_num_prototypes,learing_rate);
+    compute_range_col(dataset[attributes][training])
     
-    compute_range_col(dataset[attributes][training])    
+    # print dataset
+    print "---------"
+    print "using LVQ1" 
+    dataset = LVQ1(dataset,ratio_num_prototypes,learing_rate);    
+    # print dataset
+    
     start_time = time.time()
     #for k_nn_weighted in [False,True]:   
     for k_nn_weighted in [False]:      
       print "k_nn_weighted", k_nn_weighted
-      for k_value in k_values:
-        # print "k_value ", k_value
+      for k_value in k_values:        
         accuracy_sum = 0
         for query_idx in range(dataset[attributes][testing].shape[0]):
           query = dataset[attributes][testing][query_idx,:]        
@@ -196,23 +216,21 @@ def solve_knn(datasets,dist_func):
           if predicted_class == real_class:
             accuracy_sum += 1
         dataset_accuracy = float(accuracy_sum) / float(dataset[attributes][testing].shape[0])
-        print dataset_accuracy,",",
+        print dataset_accuracy,
       print "\n"
     elapsed_time = time.time() - start_time
-    print "elapsed time = ", elapsed_time
+    # print "elapsed time = ", elapsed_time
     
 #using dataset iris and transfusion from UCI, headers were removed
 def solve_problem1():
   #set parameters      
-  datafiles = ["iris.data.txt", "transfusion.data.txt"] 
-  class_last_column = [True,True]  
+  datafiles = ["iris.data.txt", "transfusion.data.txt","wine.data.txt"] 
+  class_last_column = [True,True,False]  
   
   #read data and run k_nn algorithm
   datasets = read_datasets(datafiles,class_last_column)
   
-  
-  
-  solve_knn(datasets,euclidian_dist)
+  solve_knn(datasets,euclidian_dist_norm)
 
 def main():
   solve_problem1()    
