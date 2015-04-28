@@ -29,14 +29,14 @@ number_types = (int, long, float,np.int64,np.float32)
 #numpy settings
 np.set_printoptions(threshold=15)
 np.set_printoptions(precision=4)
-np.random.seed(12314927)
+np.random.seed(94319287)
 
 #normalized euclidian distance global variables
 min_val_col = []
 max_val_col = []
 
 #LVQ constants
-LVQ_NUM_ITERATIONS = 50
+LVQ_NUM_ITERATIONS = 100
 
 # ============ UTILS ======================== #
 
@@ -87,6 +87,7 @@ def read_datasets(datafiles,class_last_column):
   return datasets
 
 # ============ DISTANCES ==================== #
+
 def euclidian_dist_norm(vec1, vec2):  
   sum = 0  
   for i in range(len(vec1)):   
@@ -95,6 +96,7 @@ def euclidian_dist_norm(vec1, vec2):
   return math.sqrt(sum)
 
 # ============ ALGORITHMS =================== #
+
 def LVQ_generate_prototypes(dataset,ratio_num_prototypes,learing_rate):
   num_prototypes = int(dataset[attributes][training].shape[0] * ratio_num_prototypes)
   indexes = range(dataset[attributes][training].shape[0])
@@ -104,7 +106,7 @@ def LVQ_generate_prototypes(dataset,ratio_num_prototypes,learing_rate):
   return prototypes
 
 def get_k_closest_prototypes(k_value,sample_attribute,prototypes):
-  closest_prototypes = [];  
+  closest_prototypes = [];    
   for proto_row in range(prototypes[attributes].shape[0]):     
     proto_att = prototypes[attributes][proto_row]    
     cur_dist = euclidian_dist_norm(proto_att,sample_attribute)
@@ -113,26 +115,25 @@ def get_k_closest_prototypes(k_value,sample_attribute,prototypes):
     else:
       sorted( closest_prototypes, key= lambda x : x[1], reverse=True )
       if closest_prototypes[0][1] > cur_dist :
-        closest_prototypes[0] = (proto_row,cur_dist)
-  ret = map(lambda x : x[0], closest_prototypes)
-  print ret, print closest_prototypes
-  return ret
-  
+        closest_prototypes[0] = (proto_row,cur_dist) 
+
+  sorted( closest_prototypes, key= lambda x : x[1])        
+  return closest_prototypes
   
 def LVQ1(dataset,ratio_num_prototypes,learing_rate):
 
   prototypes = LVQ_generate_prototypes(dataset,ratio_num_prototypes,learing_rate)  
-  
+
   for iteration in range(LVQ_NUM_ITERATIONS):
     for row in range(dataset[attributes][training].shape[0]):
       sample_attribute = dataset[attributes][training][row]
       sample_class = dataset[classes][training][row]
       
       closest_prototypes = get_k_closest_prototypes(1,sample_attribute,prototypes)
-            
-      proto_row = closest_prototypes[0]
+      
+      proto_row = closest_prototypes[0][0]
       proto_att = prototypes[attributes][proto_row]
-      proto_class = prototypes[attributes][proto_row]
+      proto_class = prototypes[classes][proto_row]
       
       cur_iteration_rate = decreasing_learning_rate(learing_rate,iteration,LVQ_NUM_ITERATIONS)
       dir_vec = (sample_attribute - proto_att) * cur_iteration_rate
@@ -141,11 +142,123 @@ def LVQ1(dataset,ratio_num_prototypes,learing_rate):
         prototypes[attributes][proto_row] += dir_vec
       else:
         prototypes[attributes][proto_row] -= dir_vec
+    
+  dataset[attributes][training] = prototypes[attributes]
+  dataset[classes][training] = prototypes[classes]
+
+  return dataset
+
+def LVQ2(dataset,ratio_num_prototypes,learing_rate,w_value):
+  
+  dataset = LVQ1(dataset,ratio_num_prototypes,learing_rate)
+  prototypes = [dataset[type][training][:,:] for type in [attributes,classes]]  
+  
+  s_value = (1.0-w_value)/(1.0+w_value)
+  
+  for iteration in range(LVQ_NUM_ITERATIONS):
+    for row in range(dataset[attributes][training].shape[0]):
+      sample_attribute = dataset[attributes][training][row]
+      sample_class = dataset[classes][training][row]
+      
+      closest_prototypes = get_k_closest_prototypes(2,sample_attribute,prototypes)
+      
+      proto_row1 = closest_prototypes[0][0]
+      dist_proto1 = closest_prototypes[0][1] + EPS
+      proto_att1 = prototypes[attributes][proto_row1]
+      proto_class1 = prototypes[classes][proto_row1]
+      
+      proto_row2 = closest_prototypes[1][0]
+      dist_proto2 = closest_prototypes[1][1] + EPS
+      proto_att2 = prototypes[attributes][proto_row2]
+      proto_class2 = prototypes[classes][proto_row2]
+      
+      cur_iteration_rate = decreasing_learning_rate(learing_rate,iteration,LVQ_NUM_ITERATIONS)
+      
+      dir_vec1 = (sample_attribute - proto_att1) * cur_iteration_rate
+      dir_vec2 = (sample_attribute - proto_att2) * cur_iteration_rate
+      
+      if min( float(dist_proto1)/dist_proto2 , float(dist_proto2)/dist_proto1 ) > s_value :
+        if proto_class1 != proto_class2 : 
+          if sample_class == proto_class1:
+            prototypes[attributes][proto_row1] += dir_vec1
+            prototypes[attributes][proto_row2] -= dir_vec2
+          else:
+            prototypes[attributes][proto_row1] -= dir_vec1
+            prototypes[attributes][proto_row2] += dir_vec2
   
   dataset[attributes][training] = prototypes[attributes]
   dataset[classes][training] = prototypes[classes]
   
   return dataset
+
+  
+def LVQ_helper(algorithm_str, dataset,ratio_num_prototypes,learing_rate,w_value,epsilon_value): 
+  if algorithm_str == "LVQ1":
+    prototypes = LVQ_generate_prototypes(dataset,ratio_num_prototypes,learing_rate)  
+  elif algorithm_str == "LVQ2.1" or algorithm_str == "LVQ3":
+    dataset = LVQ1(dataset,ratio_num_prototypes,learing_rate)
+    prototypes = [dataset[type][training][:,:] for type in [attributes,classes]]  
+    s_value = (1.0-w_value)/(1.0+w_value)
+    
+  for iteration in range(LVQ_NUM_ITERATIONS):
+    for row in range(dataset[attributes][training].shape[0]):
+      sample_attribute = dataset[attributes][training][row]
+      sample_class = dataset[classes][training][row]
+      
+      closest_prototypes = get_k_closest_prototypes(2,sample_attribute,prototypes)
+      
+      proto_row1 = closest_prototypes[0][0]
+      dist_proto1 = closest_prototypes[0][1] + EPS
+      proto_att1 = prototypes[attributes][proto_row1]
+      proto_class1 = prototypes[classes][proto_row1]
+      
+      proto_row2 = closest_prototypes[1][0]
+      dist_proto2 = closest_prototypes[1][1] + EPS
+      proto_att2 = prototypes[attributes][proto_row2]
+      proto_class2 = prototypes[classes][proto_row2]
+      
+      cur_iteration_rate = decreasing_learning_rate(learing_rate,iteration,LVQ_NUM_ITERATIONS)
+      
+      dir_vec1 = (sample_attribute - proto_att1) * cur_iteration_rate
+      dir_vec2 = (sample_attribute - proto_att2) * cur_iteration_rate
+      
+      
+      if algorithm_str == "LVQ1":
+        if sample_class == proto_class1:
+          prototypes[attributes][proto_row1] += dir_vec1
+        else:
+          prototypes[attributes][proto_row1] -= dir_vec1
+      
+      elif algorithm_str == "LVQ2.1":
+      
+        if min( float(dist_proto1)/dist_proto2 , float(dist_proto2)/dist_proto1 ) > s_value :
+          if proto_class1 != proto_class2 : 
+            if sample_class == proto_class1:
+              prototypes[attributes][proto_row1] += dir_vec1
+              prototypes[attributes][proto_row2] -= dir_vec2
+            else:
+              prototypes[attributes][proto_row1] -= dir_vec1
+              prototypes[attributes][proto_row2] += dir_vec2
+      
+      elif algorithm_str == "LVQ2.2":
+        if min( float(dist_proto1)/dist_proto2 , float(dist_proto2)/dist_proto1 ) > s_value :
+          if proto_class1 != proto_class2 : 
+            if sample_class == proto_class1:
+              prototypes[attributes][proto_row1] += dir_vec1
+              prototypes[attributes][proto_row2] -= dir_vec2
+            else:
+              prototypes[attributes][proto_row1] -= dir_vec1
+              prototypes[attributes][proto_row2] += dir_vec2
+          elif proto_class1 == proto_class2 and proto_class2 == sample_class:
+            prototypes[attributes][proto_row1] += epsilon_value * dir_vec1
+            prototypes[attributes][proto_row2] += epsilon_value * dir_vec2
+            
+  dataset[attributes][training] = prototypes[attributes]
+  dataset[classes][training] = prototypes[classes]
+  
+  return dataset
+  
+  
   
 def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):  
   #set first instance to be the base case
@@ -193,15 +306,18 @@ def solve_knn(datasets,dist_func):
   for dataset in datasets:
     
     ratio_num_prototypes = 0.1  
-    learing_rate = 0.05
+    learing_rate = 0.02
     
     compute_range_col(dataset[attributes][training])
     
-    # print dataset
-    print "---------"
-    print "using LVQ1" 
-    dataset = LVQ1(dataset,ratio_num_prototypes,learing_rate);    
-    # print dataset
+    #=============#
+    print "---------"    
+    # print "using LVQ1" 
+    # dataset = LVQ1(dataset,ratio_num_prototypes,learing_rate);    
+    print "using LVQ2" 
+    w_value = 0.2
+    dataset = LVQ2(dataset,ratio_num_prototypes,learing_rate,w_value);    
+    #=============#
     
     start_time = time.time()
     #for k_nn_weighted in [False,True]:   
