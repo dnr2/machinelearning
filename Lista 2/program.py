@@ -7,6 +7,12 @@ UCI Datasets:
 - PROBLEM 1 - 
 #UCI https://archive.ics.uci.edu/ml/datasets/Iris
 #UCI https://archive.ics.uci.edu/ml/datasets/Blood+Transfusion+Service+Center
+
+Used website references:
+http://sites.stat.psu.edu/~jiali/course/stat597e/notes2/knn.pdf
+http://www.eicstes.org/EICSTES_PDF/PAPERS/The%20Self-Organizing%20Map%20%28Kohonen%29.pdf
+http://www.mathworks.com/help/nnet/ug/learning-vector-quantization-lvq-neural-networks-1.html
+http://users.ics.aalto.fi/mikkok/thesis/book/node20.html
 '''
 
 import numpy as np
@@ -14,6 +20,7 @@ import pandas as pd
 import math
 import time
 import copy
+import matplotlib.pyplot as plt
 
 from collections import defaultdict
 
@@ -38,6 +45,29 @@ max_val_col = []
 
 #LVQ constants
 LVQ_NUM_ITERATIONS = 100
+learing_rate = 0.02
+w_value = 0.2
+epsilon_value = 0.1
+ratio_num_prototypes_range = [0.10,0.15,0.20,0.25,0.30,0.35]
+algorithm_str_range = ["K-NN","LVQ1","LVQ2.1","LVQ3"]  
+
+#chart and plot settings
+
+chart_titles = ["Iris Dataset LVQ", "Transfusion Dataset LVQ" ]
+
+plot_settings = { 
+  ("K-NN",1) : ['o','--','k','Not Prototyped, k = 1'],
+  ("K-NN",3) : ['o','--','k','Not Prototyped, k = 3'],
+  
+  ("LVQ1",1) : ['^','-','r','LVQ1, k = 1'],
+  ("LVQ1",3) : ['^','-','r','LVQ1, k = 3'],
+  
+  ("LVQ2.1",1) : ['h','-','b','LVQ2.1, k = 1'],
+  ("LVQ2.1",3) : ['h','-','b','LVQ2.1, k = 3'],
+  
+  ("LVQ3",1) : ['D','-','g','LVQ3, k = 1'],
+  ("LVQ3",3) : ['D','-','g','LVQ3, k = 3'],
+}
 
 # ============ UTILS ======================== #
 
@@ -157,7 +187,6 @@ def LVQ_helper(algorithm_str, dataset,ratio_num_prototypes,learing_rate,w_value,
       dir_vec1 = (sample_attribute - proto_att1) * cur_iteration_rate
       dir_vec2 = (sample_attribute - proto_att2) * cur_iteration_rate
       
-      
       if algorithm_str == "LVQ1":
         if sample_class == proto_class1:
           prototypes[attributes][proto_row1] += dir_vec1
@@ -236,56 +265,94 @@ def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):
 def solve_knn(datasets,dist_func):
   #run training with different configurations
  
-  learing_rate = 0.02
-  w_value = 0.2
-  epsilon_value = 0.1
+  k_nn_weighted = False
   
-  for dataset in datasets:
-    
-    ratio_num_prototypes = 0.1    
+  title_idx = 0
+  
+  for dataset in datasets:  
     compute_range_col(dataset[attributes][training])
         
-    print "---------"        
+    print "#-------------#"        
     
-    for algorithm_str in ["K-NN","LVQ1","LVQ2.1","LVQ3"] :    
+    for k_value in k_values:
+      print "k_value =", k_value
         
-      print "using", algorithm_str      
-      # print "before = ", dataset
-      
-      prototypes = LVQ_helper(algorithm_str,dataset,ratio_num_prototypes,learing_rate,w_value,epsilon_value);    
-      dataset_prototyped = [[None,None],[None,None]]
-      
-      dataset_prototyped[attributes][training] = prototypes[attributes].copy()
-      dataset_prototyped[attributes][testing] = dataset[attributes][testing].copy()
-      
-      dataset_prototyped[classes][training] = prototypes[classes].copy()
-      dataset_prototyped[classes][testing] = dataset[classes][testing].copy()
-      
-      # print "dataset adte LVQ2.1 =", dataset
-      # print "prototyped = ", dataset_prototyped
-      
-      #start_time = time.time()      
-      
-      k_nn_weighted = False
-      for k_value in k_values:
-        accuracy_sum = 0
-        for query_idx in range(dataset_prototyped[attributes][testing].shape[0]):
-          query = dataset_prototyped[attributes][testing][query_idx,:]        
-          real_class = dataset_prototyped[classes][testing][query_idx,0]
-          predicted_class = k_nn_predict_class(query, k_value, dataset_prototyped, k_nn_weighted, dist_func)        
-          if predicted_class == real_class:
-            accuracy_sum += 1
-        dataset_accuracy = float(accuracy_sum) / float(dataset_prototyped[attributes][testing].shape[0])
-        print dataset_accuracy,
-      print "\n"
+      for algorithm_str in algorithm_str_range :    
+        print "using", algorithm_str
+        
+        line_to_plot = []
+        
+        for ratio_num_prototypes in ratio_num_prototypes_range :
+          
+          if algorithm_str == algorithm_str_range[0] and ratio_num_prototypes > ratio_num_prototypes_range[0]:
+            break
+            
+          prototypes = LVQ_helper(algorithm_str,dataset,ratio_num_prototypes,learing_rate,w_value,epsilon_value);    
+          dataset_prototyped = [[None,None],[None,None]]
+          
+          dataset_prototyped[attributes][training] = prototypes[attributes].copy()
+          dataset_prototyped[attributes][testing] = dataset[attributes][testing].copy()
+          
+          dataset_prototyped[classes][training] = prototypes[classes].copy()
+          dataset_prototyped[classes][testing] = dataset[classes][testing].copy()   
+          
+          accuracy_sum = 0
+          for query_idx in range(dataset_prototyped[attributes][testing].shape[0]):
+            query = dataset_prototyped[attributes][testing][query_idx,:]        
+            real_class = dataset_prototyped[classes][testing][query_idx,0]
+            predicted_class = k_nn_predict_class(query, k_value, dataset_prototyped, k_nn_weighted, dist_func)        
+            if predicted_class == real_class:
+              accuracy_sum += 1
+          dataset_accuracy = float(accuracy_sum) / float(dataset_prototyped[attributes][testing].shape[0])
+          if dataset_accuracy < 1.0 - dataset_accuracy:
+            print "bugou no caso " + k_value + " " + algorithm_str
+            print "Acuracia = ", dataset_accuracy
+          
+          dataset_accuracy = max(dataset_accuracy, 1.0 - dataset_accuracy)
+          line_to_plot.append(dataset_accuracy)
+          
+        #No prototyping case
+        while len(line_to_plot) == 1 :
+          line_to_plot.append(line_to_plot[0])
 
-      #elapsed_time = time.time() - start_time
-      # print "elapsed time = ", elapsed_time
+        print line_to_plot
+        
+        #plot line in chart
+        x_values = ratio_num_prototypes_range
+        y_values = line_to_plot
+        if len(y_values) == 2 :
+          x_values = [x_values[0], x_values[-1]]
+
+        plt.plot( x_values, y_values,
+            marker = plot_settings[(algorithm_str,k_value)][0],
+            linestyle = plot_settings[(algorithm_str,k_value)][1],
+            color = plot_settings[(algorithm_str,k_value)][2],
+            label = plot_settings[(algorithm_str,k_value)][3],
+            linewidth = 2.5,
+            markersize= 9)
+      
+      plt.xlabel("number of prototypes (ratio)")
+      plt.ylabel("Accuracy")
+      plt.title( chart_titles[title_idx], fontdict ={'fontsize' : 20 } )
+      plt.legend(loc='center left', bbox_to_anchor=(1, 0.7), fancybox=True, shadow=True)        
+      
+      plt.grid()
+      plt.subplots_adjust(right=0.71,left = 0.08)
+      plt.axis( [ratio_num_prototypes_range[0]-0.01, ratio_num_prototypes_range[-1]+0.01, 0.5, 1.1])
+      
+      fig = plt.gcf()
+      fig.set_size_inches(11,5)
+      fig.savefig( chart_titles[title_idx] + "_knn_" + str( k_value) + '.png', dpi=200)
+      plt.clf() #clear plot
+    
+    title_idx += 1
+      
     
 #using dataset iris and transfusion from UCI, headers were removed
 def solve_problem1():
   #set parameters      
-  datafiles = ["iris.data.txt", "transfusion.data.txt"] 
+  datafiles = ["iris.data.txt", "transfusion.data.txt" ]  
+  
   class_last_column = [True,True,False]  
   
   #read data and run k_nn algorithm
@@ -293,7 +360,51 @@ def solve_problem1():
   
   solve_knn(datasets,euclidian_dist_norm)
 
+def test_plot_settings():
+  lines_to_plot = [  
+    [0.9333333333, 0.9333333333],
+    [0.9777777778,	1,	0.9333333333,	0.9777777778,	0.9555555556,	0.9333333333],
+    [0.9555555556,	0.9555555556,	0.9111111111,	1,	0.9333333333,	0.9555555556],
+    [0.679,	0.9777777778,	1,	0.9777777778,	0.9777777778,	0.9777777778]
+  ]
+  
+  k_value = 1
+  
+  algorithm_str_idx = 0
+  
+  for line_to_plot in lines_to_plot:
+    
+    x_values = ratio_num_prototypes_range
+    y_values = line_to_plot
+    algorithm_str = algorithm_str_range[algorithm_str_idx]
+    algorithm_str_idx += 1
+    
+    if len(y_values) == 2 :
+      x_values = [x_values[0], x_values[-1]]
+    
+    plt.plot( x_values, y_values,
+        marker = plot_settings[(algorithm_str,k_value)][0],
+        linestyle = plot_settings[(algorithm_str,k_value)][1],
+        color = plot_settings[(algorithm_str,k_value)][2],
+        label = plot_settings[(algorithm_str,k_value)][3],
+        linewidth = 2.5,
+        markersize= 9)
+    
+  plt.xlabel( "number of prototypes (ratio)" )
+  plt.ylabel( "Accuracy" )
+  plt.title('Iris Dataset LVQ', fontdict ={'fontsize' : 20 } )
+  plt.legend(loc='center left', bbox_to_anchor=(1, 0.7), fancybox=True, shadow=True)        
+
+  plt.grid()
+  plt.subplots_adjust(right=0.71,left = 0.08)
+  plt.axis( [ratio_num_prototypes_range[0]-0.01, ratio_num_prototypes_range[-1]+0.01, 0.5, 1.1])
+  
+  fig = plt.gcf()
+  fig.set_size_inches(11,5)
+  fig.savefig('graph2.png', dpi=200)
+  
 def main():
+  # test_plot_settings()
   solve_problem1()    
   
 if __name__ == "__main__":
