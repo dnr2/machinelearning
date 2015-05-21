@@ -19,6 +19,8 @@ import copy
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+from numpy.core import isfinite
+
 from collections import defaultdict
 
 # ============ GLOBAL SETTINGS ============== #
@@ -137,37 +139,48 @@ def pca(data, num_pc):
   return ( eigenVectors, data )
 
 def lda( data, class_data, num_pc):
-  
+    
   class_set = set(class_data)  
-  Mall = [np.mean( data, axis = 0 )]
+  Mall = np.mean( data, axis = 0 )
   
   Sw = None
   Sb = None
   for l in class_set:
     
-    indexes = class_data.index(l)
+    print l
+    
+    indexes = [ idx for idx,ele in enumerate(class_data.tolist()) if ele == l]    
     nl = len( indexes )
     Lsamples = data[indexes,:]
-    Ml = [np.mean( Lsamples, axis = 0 )]
+    Ml = np.mean( Lsamples, axis = 0 )    
     diff = np.matrix( Ml - Mall )
     
     if Sb is None :
-      Sb = nl * diff * np.transpose(diff)
-    else 
-      Sb = Sb + (nl * diff * np.transpose(diff))
+      Sb = nl * np.transpose(diff) * diff
+    else :
+      Sb = Sb + (nl * np.transpose(diff) * diff)
     
     for i in range(0,nl):
-      diff = Lsamples[i,:] - M1
+      diff = np.matrix(Lsamples[i,:] - Ml)
       if Sw is None :
-        Sw = diff * np.transpose(diff)
-      else 
-        Sw = Sw + (diff * np.transpose(diff))
-  
-  if numpy.linalg.det(Sw) == 0:
+        Sw = np.transpose(diff) * diff
+      else :
+        Sw = Sw + (np.transpose(diff) * diff)
+    print Sb.shape
+    print Sw.shape
+    
+  if np.linalg.det(Sw) == 0:
     #TODO
-    print "error!! determinante is zero!"
-
-  eigenValues, eigenVectors = np.linalg.eig( (numpy.linalg.inv(Sw) * Sb) )
+    print "error!! determinant is zero!"
+  
+  SwSb = np.asarray(np.linalg.inv(Sw) * Sb)
+  print SwSb
+  for a in SwSb :
+    for b in a:
+      print type(b)
+      print isfinite(b)
+    print isfinite(a.tolist)
+  # eigenValues, eigenVectors = np.linalg.eig( SwSb )
   
   #get num_pc best
   idx = list(reversed(eigenValues.argsort())) # reverse sorting  
@@ -313,7 +326,9 @@ def solve_problem1():
   #read data and run k_nn algorithm
   datasets = read_datasets(datafiles,class_last_column)
   
-  toy_dataset = datasets[1][attributes][training]
+  toy_dataset = datasets[0][attributes][training]
+  toy_classes = datasets[0][classes][training][:,0]
+  
   # toy_dataset = np.array( [
   # [151,149],[-38,-23],[85,73],[-101,-115]
   # ,[130,137],[-47,-34],[64,72],[-111,-108]
@@ -326,13 +341,11 @@ def solve_problem1():
   # ,[-10,-20],[-178,-168],[-23,-16]]
   # )
   
-  eigenVectors, new_toy_dataset = pca( toy_dataset, 3 )
+  # eigenVectors, new_toy_dataset = pca( toy_dataset, 3 )
+  eigenVectors, new_toy_dataset = lda(toy_dataset, toy_classes, 1)
   
   print eigenVectors
-  
-  fig = plt.figure()
-  ax = fig.add_subplot(111, projection='3d')
-  
+  print new_toy_dataset
   
   # solve_knn(datasets,euclidian_dist_norm)
   
