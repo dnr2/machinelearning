@@ -5,7 +5,9 @@ By: Danilo Neves Ribeiro dnr2@cin.ufpe.br
 
 UCI Datasets:
 - PROBLEM 1 - 
-#UCI https://archive.ics.uci.edu/ml/datasets/Iris
+#UCI http://archive.ics.uci.edu/ml/datasets/Climate+Model+Simulation+Crashes
+- PROBLEM 2 - 
+#UCI http://archive.ics.uci.edu/ml/machine-learning-databases/glass/
 
 followed steps from:
 http://www.nlpca.org/pca-principal-component-analysis-matlab.html
@@ -29,7 +31,6 @@ from collections import defaultdict
 attributes, classes = (0,1)
 training, testing = (0,1)
 EPS = 1e-9
-k_values = [1,3]
 train_data_ratio = 0.7;
 number_types = (int, long, float,np.int64,np.float32)
 
@@ -43,27 +44,33 @@ min_val_col = []
 max_val_col = []
 
 #chart and plot settings
-chart_titles = ["Iris Dataset LVQ", "Transfusion Dataset LVQ" ]
+chart_titles = ["Principal component analysis", "Linear discriminant analysis" ]
+title_idx = 0
 plot_settings = { 
-  ("K-NN",1) : ['o','--','k','Not Prototyped, k = 1'],
-  ("K-NN",3) : ['o','--','k','Not Prototyped, k = 3'],
-  
-  ("LVQ1",1) : ['^','-','r','LVQ1, k = 1'],
-  ("LVQ1",3) : ['^','-','r','LVQ1, k = 3'],
-  
-  ("LVQ2.1",1) : ['h','-','b','LVQ2.1, k = 1'],
-  ("LVQ2.1",3) : ['h','-','b','LVQ2.1, k = 3'],
-  
-  ("LVQ3",1) : ['D','-','g','LVQ3, k = 1'],
-  ("LVQ3",3) : ['D','-','g','LVQ3, k = 3'],
+  "pca" : ['o','--','b','PCA'],    
+  "lda" : ['^','-','r','LDA'],
 }
+
+# ("K-NN",3) : ['^','-','r','K-NN, k = 3'],  
+# ("K-NN",1) : ['h','-','b','K-NN, k = 1'],
+# ("K-NN",3) : ['h','-','b','K-NN, k = 3'],
+# ("K-NN",1) : ['D','-','g','K-NN, k = 1'],
+# ("K-NN",3) : ['D','-','g','K-NN, k = 3'],
+
+# toy_dataset = np.array( [
+# [151,149],[-38,-23],[85,73],[-101,-115]
+# ,[130,137],[-47,-34],[64,72],[-111,-108]
+# ,[139,127],[-39,-49],[67,60],[-115,-128]
+# ,[118,128],[-53,-50],[50,41],[-130,-124]
+# ,[117,102],[-67,-59],[32,41],[-140,-134]
+# ,[104,109],[-68,-77],[35,24],[-142,-152]
+# ,[91,100],[-87,-93],[29,15],[-155,-163]
+# ,[95,182],[-103,-92],[9,15],[-162,-150]
+# ,[-10,-20],[-178,-168],[-23,-16]]
+# )
 
 # ============ UTILS ======================== #
 
-#linear decreasing learning rate function
-def decreasing_learning_rate(learing_rate,t,total_t):  
-  return learing_rate * ((1.0 + EPS) - (float(t)/float(total_t)))
- 
 #computer rage for euclidean distance normalization
 def compute_range_col(dataset):
   new_matrix = dataset  
@@ -84,10 +91,13 @@ def compute_range_col(dataset):
 #read datasets from different file sources (headers must be removed)
 #each dataset is split into attributes and classes
 #after that, each type is split into training and and testing
-def read_datasets(datafiles,class_last_column):
+def read_datasets(datafiles,class_last_column,skip_idxs = [],whitespacesep = False):
   #read data  
-  datasets = [np.array(pd.read_csv(file,sep=',',header=None,converters={})) for file in datafiles]
+  datasets = [np.array(pd.read_csv(file,sep=',',delim_whitespace=whitespacesep,header=None,converters={})) for file in datafiles]
   map(np.random.shuffle, datasets)  
+  if len(skip_idxs) > 0:    
+    datasets = [ dataset[:,[idx for idx in range(0,dataset.shape[1]) if (idx not in skip_idxs)]] 
+      for dataset in datasets]  
   
   #split datasets in two types: classes and attributes, index [0,1]  
   datasets = [ np.split(dataset, [dataset.shape[1]-1] if class_last_column[idx] else [1],axis=1 ) 
@@ -105,19 +115,24 @@ def read_datasets(datafiles,class_last_column):
     for type in [attributes,classes]]  for dataset in datasets]  
   return datasets
 
+def apply_tranformation( data, trans_matrix):
+  return np.array(  np.matrix(data) * np.matrix(trans_matrix) )
+  
 # ============ DISTANCES ==================== #
 
 def euclidian_dist_norm(vec1, vec2):  
   sum = 0  
   for i in range(len(vec1)):   
     range_col = max_val_col[i] - min_val_col[i]
-    sum = sum + math.pow(float(vec1[i] - vec2[i])/float(range_col), 2)
+    sum = sum + math.pow(float(vec1[i] - vec2[i])/(float(range_col)+EPS), 2)
   return math.sqrt(sum)
 
 # ============ ALGORITHMS =================== #
 
-def pca(data, num_pc):
-    
+#principal component analysis
+def pca(data, class_data, num_pc):
+  #warning: parameter class_data is not used
+  
   #normalize data with mean
   mean_vec = [np.mean( data, axis = 0 )]
   repeated_mean_vec = np.repeat(mean_vec, data.shape[0], axis = 0)
@@ -133,11 +148,10 @@ def pca(data, num_pc):
     
   eigenValues = eigenValues[idx]
   eigenVectors = eigenVectors[:,idx]
-  
-  data = np.array(  np.matrix(data) * np.matrix(eigenVectors) )
-  
-  return ( eigenVectors, data )
+    
+  return eigenVectors
 
+#Linear discriminant analysis
 def lda( data, class_data, num_pc):
     
   class_set = set(class_data)  
@@ -147,13 +161,11 @@ def lda( data, class_data, num_pc):
   Sb = None
   for l in class_set:
     
-    print l
-    
-    indexes = [ idx for idx,ele in enumerate(class_data.tolist()) if ele == l]    
-    nl = len( indexes )
+    indexes = [idx for idx,ele in enumerate(class_data.tolist()) if ele == l]    
+    nl = len(indexes)
     Lsamples = data[indexes,:]
-    Ml = np.mean( Lsamples, axis = 0 )    
-    diff = np.matrix( Ml - Mall )
+    Ml = np.mean(Lsamples, axis = 0)
+    diff = np.matrix(Ml - Mall)
     
     if Sb is None :
       Sb = nl * np.transpose(diff) * diff
@@ -165,33 +177,26 @@ def lda( data, class_data, num_pc):
       if Sw is None :
         Sw = np.transpose(diff) * diff
       else :
-        Sw = Sw + (np.transpose(diff) * diff)
-    print Sb.shape
-    print Sw.shape
+        Sw = Sw + (np.transpose(diff) * diff)    
     
   if np.linalg.det(Sw) == 0:
     #TODO
     print "error!! determinant is zero!"
   
   SwSb = np.asarray(np.linalg.inv(Sw) * Sb)
-  print SwSb
-  for a in SwSb :
-    for b in a:
-      print type(b)
-      print isfinite(b)
-    print isfinite(a.tolist)
-  # eigenValues, eigenVectors = np.linalg.eig( SwSb )
+  SwSb = SwSb.tolist()
+  eigenValues, eigenVectors = np.linalg.eig( SwSb )
   
   #get num_pc best
   idx = list(reversed(eigenValues.argsort())) # reverse sorting  
   idx = idx[0:num_pc] # selects only num_pc vectors
-    
+  
+  
+  
   eigenValues = eigenValues[idx]
-  eigenVectors = eigenVectors[:,idx]
+  eigenVectors = eigenVectors[:,idx]   
   
-  data = np.array(  np.matrix(data) * np.matrix(eigenVectors) )
-  
-  return ( eigenVectors, data )
+  return eigenVectors
   
 def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):  
   #set first instance to be the base case
@@ -234,124 +239,120 @@ def k_nn_predict_class(query, k_value, dataset, weighted, dist_func):
   
 # ============ SOLUTION FOR PROBLEMS ======== #
 
-def solve_knn(datasets,dist_func):
+def solve_knn(datasets,dist_func,dim_reduction_algo):
   #run training with different configurations
  
   k_nn_weighted = False
+  k_value = 3
   
-  title_idx = 0
+  global title_idx
   
-  for dataset in datasets:  
-    compute_range_col(dataset[attributes][training])
-   
+  for dataset in datasets:
+
     print "#-------------#"        
     
-    for k_value in k_values:
-      print "k_value =", k_value
-        
-      for algorithm_str in algorithm_str_range :    
-        print "using", algorithm_str
-        
-        line_to_plot = []
-        
-        for ratio_num_prototypes in ratio_num_prototypes_range :
-          
-          if algorithm_str == algorithm_str_range[0] and ratio_num_prototypes > ratio_num_prototypes_range[0]:
-            break
-            
-          prototypes = LVQ_helper(algorithm_str,dataset,ratio_num_prototypes,learing_rate,w_value,epsilon_value);    
-          dataset_prototyped = [[None,None],[None,None]]
-          
-          dataset_prototyped[attributes][training] = prototypes[attributes].copy()
-          dataset_prototyped[attributes][testing] = dataset[attributes][testing].copy()
-          
-          dataset_prototyped[classes][training] = prototypes[classes].copy()
-          dataset_prototyped[classes][testing] = dataset[classes][testing].copy()   
-          
-          accuracy_sum = 0
-          for query_idx in range(dataset_prototyped[attributes][testing].shape[0]):
-            query = dataset_prototyped[attributes][testing][query_idx,:]        
-            real_class = dataset_prototyped[classes][testing][query_idx,0]
-            predicted_class = k_nn_predict_class(query, k_value, dataset_prototyped, k_nn_weighted, dist_func)        
-            if predicted_class == real_class:
-              accuracy_sum += 1
-          dataset_accuracy = float(accuracy_sum) / float(dataset_prototyped[attributes][testing].shape[0])          
-          line_to_plot.append(dataset_accuracy)
-          
-        #Not prototyped case
-        while len(line_to_plot) == 1 :
-          line_to_plot.append(line_to_plot[0])
-
-        print line_to_plot
-        
-        #plot line in chart
-        x_values = ratio_num_prototypes_range
-        y_values = line_to_plot
-        if len(y_values) == 2 :
-          x_values = [x_values[0], x_values[-1]]
-
-        plt.plot( x_values, y_values,
-            marker = plot_settings[(algorithm_str,k_value)][0],
-            linestyle = plot_settings[(algorithm_str,k_value)][1],
-            color = plot_settings[(algorithm_str,k_value)][2],
-            label = plot_settings[(algorithm_str,k_value)][3],
-            linewidth = 2.5,
-            markersize= 9)
-      
-      #set labels and title and settings, save chart afterwards
-      plt.xlabel("number of prototypes (ratio)")
-      plt.ylabel("Accuracy")
-      plt.title( chart_titles[title_idx], fontdict ={'fontsize' : 20 } )
-      plt.legend(loc='center left', bbox_to_anchor=(1, 0.7), fancybox=True, shadow=True)        
-      
-      plt.grid()
-      plt.subplots_adjust(right=0.71,left = 0.08)
-      plt.axis( [ratio_num_prototypes_range[0]-0.01, ratio_num_prototypes_range[-1]+0.01, 0.5, 1.1])
-      
-      fig = plt.gcf()
-      fig.set_size_inches(11,5)
-      fig.savefig( chart_titles[title_idx] + "_knn_" + str( k_value) + '.png', dpi=200)
-      plt.clf() #clear plot
+    line_to_plot = []
     
-    title_idx += 1
+    num_pc_max = 0
+    
+    if dim_reduction_algo == pca:
+      num_pc_max = dataset[attributes][training].shape[1]
+    elif dim_reduction_algo == lda:
+      num_pc_max = len(set(dataset[classes][training][:,0]))
+      print "CLASS SET = " , set(dataset[classes][training][:,0])
+    
+    for num_pc in range( 1, num_pc_max):
       
+      print "num_pc = ", num_pc
+      
+      eigenVectors = dim_reduction_algo( dataset[attributes][training].copy(), 
+        dataset[classes][training].copy()[:,0], num_pc )
+            
+      dataset_modified = [[None,None],[None,None]]
+      for type in [attributes, classes]:
+        for dset in [training, testing]:
+          dataset_modified[type][dset] = dataset[type][dset].copy();
+          if type == attributes:            
+            dataset_modified[type][dset] = apply_tranformation(dataset_modified[type][dset], eigenVectors);                  
+      
+      
+      compute_range_col(dataset_modified[attributes][training])
+
+      accuracy_sum = 0
+      
+      for query_idx in range(dataset_modified[attributes][testing].shape[0]):
+        query = dataset_modified[attributes][testing][query_idx,:]        
+        real_class = dataset_modified[classes][testing][query_idx,0]
+        predicted_class = k_nn_predict_class(query, k_value, dataset_modified, k_nn_weighted, dist_func)        
+        if predicted_class == real_class:
+          accuracy_sum += 1
+      dataset_accuracy = float(accuracy_sum) / float(dataset_modified[attributes][testing].shape[0])          
+      line_to_plot.append(dataset_accuracy)
+
+    print line_to_plot
+    print "num_pc_max", num_pc_max
+    #plot line in chart
+    x_values = range(1,num_pc_max)
+    y_values = line_to_plot
+
+    
+    algorithm_str = ""
+    if dim_reduction_algo == pca:
+      algorithm_str = "pca"
+    elif dim_reduction_algo == lda:
+      algorithm_str = "lda"
+    
+    plt.plot( x_values, y_values,
+        marker = plot_settings[algorithm_str][0],
+        linestyle = plot_settings[algorithm_str][1],
+        color = plot_settings[algorithm_str][2],
+        label = plot_settings[algorithm_str][3],
+        linewidth = 2.5,
+        markersize= 9)
+    
+    #set labels and title and settings, save chart afterwards
+    plt.xlabel("Number of components")
+    plt.ylabel("Accuracy")
+    plt.title( chart_titles[title_idx], fontdict ={'fontsize' : 20 } )
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.7), fancybox=True, shadow=True)        
+    
+    plt.grid()
+    plt.subplots_adjust(right=0.71,left = 0.08)
+    
+    fig = plt.gcf()
+    fig.set_size_inches(11,5)
+    fig.savefig( chart_titles[title_idx] + "_knn_" + str( k_value) + '.png', dpi=200)
+    plt.clf() #clear plot
+    print (chart_titles[title_idx] + "_knn_" + str( k_value) + '.png')
+    title_idx += 1
     
 #using dataset iris and transfusion from UCI, headers were removed
 def solve_problem1():
   #set parameters      
-  datafiles = ["iris.data.txt", "transfusion.data.txt" ]  
-  
-  class_last_column = [True,True,False]  
+  datafiles = ["pop_failures.dat.txt"]
+  class_last_column = [True]  
+  whitespacesep  = True
   
   #read data and run k_nn algorithm
-  datasets = read_datasets(datafiles,class_last_column)
+  datasets = read_datasets(datafiles,class_last_column, whitespacesep = whitespacesep)
+  print datasets
+  solve_knn(datasets,euclidian_dist_norm,pca)
   
-  toy_dataset = datasets[0][attributes][training]
-  toy_classes = datasets[0][classes][training][:,0]
+def solve_problem2():
+  #set parameters      
+  datafiles = ["glass.data.txt"]  
+  class_last_column = [True]
+  skip_idxs = [0]
   
-  # toy_dataset = np.array( [
-  # [151,149],[-38,-23],[85,73],[-101,-115]
-  # ,[130,137],[-47,-34],[64,72],[-111,-108]
-  # ,[139,127],[-39,-49],[67,60],[-115,-128]
-  # ,[118,128],[-53,-50],[50,41],[-130,-124]
-  # ,[117,102],[-67,-59],[32,41],[-140,-134]
-  # ,[104,109],[-68,-77],[35,24],[-142,-152]
-  # ,[91,100],[-87,-93],[29,15],[-155,-163]
-  # ,[95,182],[-103,-92],[9,15],[-162,-150]
-  # ,[-10,-20],[-178,-168],[-23,-16]]
-  # )
+  #read data and run k_nn algorithm
+  datasets = read_datasets(datafiles,class_last_column,skip_idxs = skip_idxs)
   
-  # eigenVectors, new_toy_dataset = pca( toy_dataset, 3 )
-  eigenVectors, new_toy_dataset = lda(toy_dataset, toy_classes, 1)
+  print datasets
+  solve_knn(datasets,euclidian_dist_norm,lda)
   
-  print eigenVectors
-  print new_toy_dataset
-  
-  # solve_knn(datasets,euclidian_dist_norm)
-  
-def main():
-  # test_plot_settings()
+def main():  
   solve_problem1()    
+  solve_problem2()    
   
 if __name__ == "__main__":
   main()
